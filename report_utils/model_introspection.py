@@ -19,20 +19,41 @@ def get_properties_from_model(model_class):
     return sorted(properties, key=lambda k: k['label'])
 
 
-def get_relation_fields_from_model(model_class):
-    """ Get related fields (m2m, FK, and reverse FK) """
-    relation_fields = []
-    all_fields_names = model_class._meta.get_all_field_names()
+def get_direct_fields_from_model(model_class):
+    """ Direct, not m2m, not FK """
+    direct_fields = []
+    all_fields_names = get_all_field_names(model_class._meta)
     for field_name in all_fields_names:
         field = model_class._meta.get_field_by_name(field_name)
-        # get_all_field_names will return the same field
-        # both with and without _id. Ignore the duplicate.
-        if field_name[-3:] == '_id' and field_name[:-3] in all_fields_names:
+        if field[2] and not field[3] and not hasattr(field[0], 'related'):
+            direct_fields += [field[0]]
+    return direct_fields
+
+
+def get_all_field_names(model_meta):
+    """Copied from django.db.models.options.Options.get_all_field_names
+    replacing set() with list() to preserve field order"""
+
+    # Using internal variable 'self' to be as similar as possible to original function
+    self = model_meta
+    names = list()
+    fields = self.get_fields()
+    for field in fields:
+        # For backwards compatibility GenericForeignKey should not be
+        # included in the results.
+        if field.is_relation and field.many_to_one and field.related_model is None:
             continue
-        if field[3] or not field[2] or hasattr(field[0], 'related'):
-            field[0].field_name = field_name
-            relation_fields += [field[0]]
-    return relation_fields
+        # Relations to child proxy models should not be included.
+        if (field.model != self.model and
+                field.model._meta.concrete_model == self.concrete_model):
+            continue
+
+        if field.name in names:
+            continue
+        names.append(field.name)
+        if hasattr(field, 'attname') and field.attname != field.name:
+            names.append(field.attname)
+    return names
 
 
 def get_direct_fields_from_model(model_class):
